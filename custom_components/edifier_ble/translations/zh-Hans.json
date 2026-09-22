@@ -1,0 +1,116 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "该 Edifier 设备已经配置。",
+      "no_devices_found": "未发现支持的 Edifier 设备。",
+      "not_supported": "不支持该 Edifier 设备。"
+    },
+    "flow_title": "{name}",
+    "step": {
+      "bluetooth_confirm": {
+        "title": "发现 Edifier 设备",
+        "description": "是否添加 {name}？"
+      },
+      "user": {
+        "title": "添加 Edifier 设备",
+        "description": "请选择已发现的 Edifier 设备。",
+        "data": {
+          "address": "设备"
+        }
+      }
+    }
+  },
+  "entity": {
+    "media_player": {
+      "media_player": {
+        "name": "媒体播放器"
+      }
+    },
+    "number": {
+      "volume": {
+        "name": "音量"
+      },
+      "eq_62hz": {
+        "name": "62 Hz 均衡器"
+      },
+      "eq_250hz": {
+        "name": "250 Hz 均衡器"
+      },
+      "eq_1khz": {
+        "name": "1 kHz 均衡器"
+      },
+      "eq_4khz": {
+        "name": "4 kHz 均衡器"
+      },
+      "eq_8khz": {
+        "name": "8 kHz 均衡器"
+      },
+      "eq_16khz": {
+        "name": "16 kHz 均衡器"
+      }
+    },
+    "select": {
+      "source": {
+        "name": "音源",
+        "state": {
+          "bluetooth": "蓝牙",
+          "soundcard": "声卡",
+          "aux": "AUX"
+        }
+      },
+      "eq_mode": {
+        "name": "均衡器模式",
+        "state": {
+          "music": "音乐",
+          "monitor": "监听",
+          "game": "游戏",
+          "movie": "电影",
+          "diy": "DIY"
+        }
+      },
+      "light_time": {
+        "name": "亮灯时长",
+        "state": {
+          "5s": "5秒",
+          "10s": "10秒",
+          "20s": "20秒",
+          "on": "常亮"
+        }
+      },
+      "light_distance": {
+        "name": "感应距离",
+        "state": {
+          "far": "远距离",
+          "normal": "普通",
+          "near": "近距离"
+        }
+      }
+    },
+    "sensor": {
+      "rssi": {
+        "name": "BLE 信号强度"
+      },
+      "audio_mac_address": {
+        "name": "蓝牙音频 MAC 地址"
+      }
+    },
+    "switch": {
+      "connection": {
+        "name": "BLE 连接"
+      },
+      "beep": {
+        "name": "蓝牙提示音"
+      }
+    },
+    "text": {
+      "device_name": {
+        "name": "设备名称"
+      }
+    },
+    "binary_sensor": {
+      "connection_status": {
+        "name": "BLE 连接状态"
+      }
+    }
+  }
+}

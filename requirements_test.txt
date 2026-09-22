@@ -1,0 +1,6 @@
+homeassistant
+aiousbwatcher
+serialx
+pyserial
+bleak-esphome>=1.0.0
+bleak-retry-connector>=3.5.0

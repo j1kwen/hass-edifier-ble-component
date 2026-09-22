@@ -1,0 +1,116 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "This Edifier device is already configured.",
+      "no_devices_found": "No supported Edifier devices were found.",
+      "not_supported": "This Edifier device is not supported."
+    },
+    "flow_title": "{name}",
+    "step": {
+      "bluetooth_confirm": {
+        "title": "Edifier device discovered",
+        "description": "Do you want to add {name}?"
+      },
+      "user": {
+        "title": "Add Edifier device",
+        "description": "Select a discovered Edifier device.",
+        "data": {
+          "address": "Device"
+        }
+      }
+    }
+  },
+  "entity": {
+    "media_player": {
+      "media_player": {
+        "name": "Media player"
+      }
+    },
+    "number": {
+      "volume": {
+        "name": "Volume"
+      },
+      "eq_62hz": {
+        "name": "62 Hz equalizer"
+      },
+      "eq_250hz": {
+        "name": "250 Hz equalizer"
+      },
+      "eq_1khz": {
+        "name": "1 kHz equalizer"
+      },
+      "eq_4khz": {
+        "name": "4 kHz equalizer"
+      },
+      "eq_8khz": {
+        "name": "8 kHz equalizer"
+      },
+      "eq_16khz": {
+        "name": "16 kHz equalizer"
+      }
+    },
+    "select": {
+      "source": {
+        "name": "Input source",
+        "state": {
+          "bluetooth": "Bluetooth",
+          "soundcard": "Sound card",
+          "aux": "AUX"
+        }
+      },
+      "eq_mode": {
+        "name": "Equalizer preset",
+        "state": {
+          "music": "Music",
+          "monitor": "Monitor",
+          "game": "Game",
+          "movie": "Movie",
+          "diy": "DIY"
+        }
+      },
+      "light_time": {
+        "name": "Light duration",
+        "state": {
+          "5s": "5 seconds",
+          "10s": "10 seconds",
+          "20s": "20 seconds",
+          "on": "Always on"
+        }
+      },
+      "light_distance": {
+        "name": "Sensor distance",
+        "state": {
+          "far": "Far",
+          "normal": "Normal",
+          "near": "Near"
+        }
+      }
+    },
+    "sensor": {
+      "rssi": {
+        "name": "BLE signal strength"
+      },
+      "audio_mac_address": {
+        "name": "Bluetooth audio MAC address"
+      }
+    },
+    "switch": {
+      "connection": {
+        "name": "BLE connection"
+      },
+      "beep": {
+        "name": "Bluetooth prompt tone"
+      }
+    },
+    "text": {
+      "device_name": {
+        "name": "Device name"
+      }
+    },
+    "binary_sensor": {
+      "connection_status": {
+        "name": "BLE connection status"
+      }
+    }
+  }
+}
