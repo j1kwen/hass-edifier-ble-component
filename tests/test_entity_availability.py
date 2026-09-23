@@ -15,12 +15,14 @@ from custom_components.edifier_ble.const import (
 )
 from custom_components.edifier_ble.entity import (
     BINARY_SENSOR_DESCRIPTIONS,
+    MEDIA_PLAYER_DESCRIPTIONS,
     NUMBER_DESCRIPTIONS,
     SENSOR_DESCRIPTIONS,
     build_device_info,
     state_to_bluetooth_data,
 )
 from custom_components.edifier_ble.models import EdifierState
+from custom_components.edifier_ble.media_player import EdifierMediaPlayer
 from custom_components.edifier_ble.number import EdifierNumber
 from custom_components.edifier_ble.protocol import parse_d8_features
 from custom_components.edifier_ble.sensor import EdifierSensor
@@ -28,12 +30,15 @@ from custom_components.edifier_ble.sensor import EdifierSensor
 N300_FEATURES = bytes.fromhex("0000010401010100000001010A130100002004030430")
 
 
-class EntityAvailabilityTest(unittest.TestCase):
+class EntityAvailabilityTest(unittest.IsolatedAsyncioTestCase):
     """Test control and diagnostic availability rules."""
 
     def setUp(self) -> None:
         """Create a fake processor with an N300 device."""
         state = EdifierState(features=parse_d8_features(N300_FEATURES))
+        async def async_play_control(self, action: str) -> None:
+            self.play_actions.append(action)
+
         device = type(
             "Device",
             (),
@@ -42,6 +47,8 @@ class EntityAvailabilityTest(unittest.TestCase):
                 "state": state,
                 "max_device_name_length": 35,
                 "initialized": True,
+                "play_actions": [],
+                "async_play_control": async_play_control,
             },
         )()
         coordinator = type(
@@ -126,6 +133,17 @@ class EntityAvailabilityTest(unittest.TestCase):
         self.assertFalse(number.available)
         self.device.state.eq_mode = "diy"
         self.assertTrue(number.available)
+
+    async def test_media_play_and_pause_services(self) -> None:
+        """HA media services should send play and pause commands."""
+        media = EdifierMediaPlayer(
+            self.processor,
+            PassiveBluetoothEntityKey(MEDIA_PLAYER_DESCRIPTIONS[0].key, None),
+            MEDIA_PLAYER_DESCRIPTIONS[0],
+        )
+        await media.async_media_play()
+        await media.async_media_pause()
+        self.assertEqual(self.device.play_actions, ["play", "pause"])
 
     def test_diagnostic_values(self) -> None:
         """RSSI and BLE connectivity should be exposed to diagnostics."""

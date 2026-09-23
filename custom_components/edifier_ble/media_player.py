@@ -109,13 +109,20 @@ class EdifierMediaPlayer(EdifierControlEntity, MediaPlayerEntity):
         """Pause playback."""
         await self.coordinator.device.async_play_control("pause")
 
-    async def async_play(self) -> None:
+    async def async_media_play(self) -> None:
         """Start playback."""
         await self.coordinator.device.async_play_control("play")
 
-    async def async_pause(self) -> None:
+    async def async_media_pause(self) -> None:
         """Pause playback."""
         await self.coordinator.device.async_play_control("pause")
+
+    async def async_media_play_pause(self) -> None:
+        """Toggle playback."""
+        if self.state == MediaPlayerState.PLAYING:
+            await self.async_media_pause()
+        else:
+            await self.async_media_play()
 
     async def async_media_next_track(self) -> None:
         """Skip to the next track."""
