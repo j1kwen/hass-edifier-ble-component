@@ -99,6 +99,16 @@ class EdifierDevice:
         return self._state
 
     @property
+    def _write_char_uuid(self) -> str:
+        """Return the write characteristic UUID for this model."""
+        return self.model.write_char_uuid or WRITE_CHARACTERISTIC_UUID
+
+    @property
+    def _notify_char_uuid(self) -> str:
+        """Return the notify characteristic UUID for this model."""
+        return self.model.notify_char_uuid or NOTIFY_CHARACTERISTIC_UUID
+
+    @property
     def connected(self) -> bool:
         """Return if the BLE client is connected."""
         client = self._client
@@ -168,7 +178,7 @@ class EdifierDevice:
 
             try:
                 await client.start_notify(
-                    NOTIFY_CHARACTERISTIC_UUID, self._notification_handler
+                    self._notify_char_uuid, self._notification_handler
                 )
             except BleakError:
                 await client.disconnect()
@@ -192,7 +202,7 @@ class EdifierDevice:
 
             if client is not None:
                 try:
-                    await client.stop_notify(NOTIFY_CHARACTERISTIC_UUID)
+                    await client.stop_notify(self._notify_char_uuid)
                 except (BleakError, EOFError, BrokenPipeError):
                     pass
                 try:
@@ -315,7 +325,7 @@ class EdifierDevice:
 
             try:
                 await client.write_gatt_char(
-                    WRITE_CHARACTERISTIC_UUID,
+                    self._write_char_uuid,
                     build_packet(command, data),
                     response=False,
                 )
