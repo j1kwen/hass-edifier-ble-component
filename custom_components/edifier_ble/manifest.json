@@ -5,6 +5,10 @@
     {
       "service_uuid": "00007e00-0000-1000-8000-00805f9b34fb",
       "connectable": true
+    },
+    {
+      "service_uuid": "00007f00-0000-1000-8000-00805f9b34fb",
+      "connectable": true
     }
   ],
   "codeowners": [
@@ -21,5 +25,5 @@
     "bleak-esphome>=1.0.0",
     "bleak-retry-connector>=3.5.0"
   ],
-  "version": "0.1.1"
+  "version": "0.1.2"
 }

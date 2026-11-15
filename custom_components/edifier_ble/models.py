@@ -9,12 +9,20 @@ DEFAULT_MAX_DEVICE_NAME_LENGTH = 248
 
 @dataclass(frozen=True, slots=True)
 class EdifierModel:
-    """A supported Edifier device model."""
+    """A supported Edifier device model.
+
+    The GATT UUID fields are optional: when unset, the integration-wide
+    defaults from ``const`` are used. Some Edifier families expose the
+    control service under different characteristic UUIDs.
+    """
 
     service_uuid: str
     model: str
     model_code: str
     manufacturer: str
+    gatt_service_uuid: str | None = None
+    write_char_uuid: str | None = None
+    notify_char_uuid: str | None = None
 
 @dataclass(slots=True)
 class EdifierFeatures:

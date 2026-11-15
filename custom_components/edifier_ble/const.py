@@ -12,6 +12,7 @@ CONF_MODEL = "model"
 CONF_CONNECTION_ENABLED = "connection_enabled"
 
 TARGET_SERVICE_UUID = "00007e00-0000-1000-8000-00805f9b34fb"
+S3000MKII_SERVICE_UUID = "00007f00-0000-1000-8000-00805f9b34fb"
 EDIFIER_COMPANY_ID = 0x07E0
 
 GATT_SERVICE_UUID = "48097e01-1a48-11e9-ab14-d663bd873d93"
@@ -23,6 +24,12 @@ MODELS_BY_SERVICE_UUID: dict[str, EdifierModel] = {
         service_uuid=TARGET_SERVICE_UUID,
         model="N300",
         model_code="EDF100074",
+        manufacturer=MANUFACTURER,
+    ),
+    S3000MKII_SERVICE_UUID: EdifierModel(
+        service_uuid=S3000MKII_SERVICE_UUID,
+        model="S3000MKII",
+        model_code="EDF100078",
         manufacturer=MANUFACTURER,
     ),
 }
