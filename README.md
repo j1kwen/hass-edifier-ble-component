@@ -73,8 +73,8 @@ Entities are created dynamically from the device `D8` feature bitmap.
 | Input source | Select | Bluetooth, sound card, or AUX |
 | Volume | Number | Device-reported range (0 to 16 on N300 and 0 to 30 on the observed MR3) |
 | Media player | Media player | Play, pause, previous, next, volume, and mute |
-| Equalizer preset | Select | N300: music, monitor, game, movie, and DIY |
-| Equalizer bands | Number | Bands are created from the device response; N300 exposes six and the observed MR3 exposes nine; -3 to +3 dB in 0.5 dB steps |
+| Equalizer preset | Select | N300: music, monitor, game, movie, and DIY; MR3: Music, Monitor, and Custom |
+| Equalizer bands | Number | Bands are created from the device response; N300 exposes six and the observed MR3 exposes nine; -3 to +3 dB in 0.5 dB steps; editable in DIY (N300) or Custom (MR3) |
 | Low-cut frequency, slope, acoustic space, desktop mode | Number, selects, switch | MR3 advanced audio controls |
 | Light duration | Select | 5 seconds, 10 seconds, 20 seconds, or always on |
 | Sensor distance | Select | Far, normal, or near |
@@ -86,6 +86,9 @@ Entities are created dynamically from the device `D8` feature bitmap.
 - The Edifier BLE control channel supports only one central connection at a time.
 - Media information depends on classic Bluetooth AVRCP and is reported only in Bluetooth source mode.
 - Reconnecting after a firmware update performs another `D8` query and adapts to added or removed features.
+- MR3 sound mode and acoustic tuning share the `D5`/`C4` payload. Changing one setting preserves the others and requires an initialized `D5` response.
+
+MR3 sound-mode handling is based on the [MR3 protocol reference](https://github.com/Saikomantisu/omarchy-edifier-mr3/blob/9eb321e7c7b37c53f55ba5136a11050744f906a1/scripts/protocol.py), reported as verified on firmware 1.0.7.
 
 ## Troubleshooting
 

@@ -46,11 +46,11 @@ class EdifierNumber(EdifierControlEntity, NumberEntity):
         """Return whether this number can currently be controlled."""
         if not super().available:
             return False
-        if (
-            getattr(self.entity_description, "eq_diy_only", False)
-            and self.coordinator.device.model.model != "MR3"
-        ):
-            return self.coordinator.device.state.eq_mode == "diy"
+        if getattr(self.entity_description, "eq_diy_only", False):
+            custom_mode = (
+                "custom" if self.coordinator.device.model.model == "MR3" else "diy"
+            )
+            return self.coordinator.device.state.eq_mode == custom_mode
         return True
 
     @property

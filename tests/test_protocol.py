@@ -146,9 +146,11 @@ class EqualizerTest(unittest.TestCase):
         response = bytes.fromhex("01 01 00 23 03 00 00")
         self.assertEqual(parse_advanced_audio(response), (35, 3, 0, False))
         self.assertEqual(
-            build_advanced_audio_data(35, 3, 0, False),
-            bytes.fromhex("00 02 00 23 03 00 00"),
+            build_advanced_audio_data(35, 3, 0, False, current_data=response),
+            response,
         )
+        with self.assertRaises(ValueError):
+            build_advanced_audio_data(35, 3, 0, False, current_data=b"")
         self.assertIsNone(parse_advanced_audio(bytes.fromhex("01 01 00 23 04 00 00")))
 
 

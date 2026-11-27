@@ -11,6 +11,7 @@ from homeassistant.components.number import NumberEntityDescription
 
 from custom_components.edifier_ble.const import (
     MODELS_BY_SERVICE_UUID,
+    MR3_SERVICE_UUID,
     TARGET_SERVICE_UUID,
 )
 from custom_components.edifier_ble.entity import (
@@ -203,13 +204,34 @@ class EntityAvailabilityTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("eq_62hz", number_keys)
         self.assertIn("low_cut_frequency", number_keys)
         select_keys = {key.key for key in select_data.entity_descriptions}
-        self.assertNotIn("eq_mode", select_keys)
+        self.assertIn("eq_mode", select_keys)
+        mode_key = PassiveBluetoothEntityKey("eq_mode", None)
+        self.assertEqual(
+            select_data.entity_descriptions[mode_key].options,
+            ["music", "monitor", "custom"],
+        )
         self.assertIn("low_cut_slope", select_keys)
         self.assertIn("acoustic_space", select_keys)
         self.assertIn(
             "desktop_mode",
             {key.key for key in switch_data.entity_descriptions},
         )
+
+    def test_mr3_equalizer_available_only_in_custom(self) -> None:
+        """MR3 uses Custom rather than N300's DIY to enable band controls."""
+        self.device.model = MODELS_BY_SERVICE_UUID[MR3_SERVICE_UUID]
+        description = NUMBER_DESCRIPTIONS[1]
+        number = EdifierNumber(
+            self.processor,
+            PassiveBluetoothEntityKey(description.key, None),
+            description,
+        )
+        for mode in (None, "music", "monitor"):
+            with self.subTest(mode=mode):
+                self.device.state.eq_mode = mode
+                self.assertFalse(number.available)
+        self.device.state.eq_mode = "custom"
+        self.assertTrue(number.available)
 
 
 if __name__ == "__main__":

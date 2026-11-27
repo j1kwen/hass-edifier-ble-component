@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, cast
 
 from homeassistant.components.binary_sensor import (
@@ -59,6 +59,7 @@ from .protocol import (
     EQ_BANDS_BY_KEY,
     EQ_MODE_TO_OPTION,
     LIGHT_TIME_TO_OPTION,
+    MR3_EQ_MODE_TO_OPTION,
     SOURCE_TO_OPTION,
 )
 
@@ -297,7 +298,9 @@ def state_to_bluetooth_data(
         if not all(state.features.supports(feature) for feature in feature_keys):
             continue
         if description.key == KEY_EQ_MODE and model.model == "MR3":
-            continue
+            description = replace(
+                description, options=list(MR3_EQ_MODE_TO_OPTION.values())
+            )
         if (
             description.key in EQ_BANDS_BY_KEY
             and description.key not in state.eq_bands

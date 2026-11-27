@@ -27,6 +27,15 @@ EQ_MODE_TO_OPTION = {
 }
 OPTION_TO_EQ_MODE = {value: key for key, value in EQ_MODE_TO_OPTION.items()}
 
+MR3_EQ_MODE_TO_OPTION = {
+    0x01: "music",
+    0x00: "monitor",
+    0x02: "custom",
+}
+OPTION_TO_MR3_EQ_MODE = {
+    value: key for key, value in MR3_EQ_MODE_TO_OPTION.items()
+}
+
 LIGHT_TIME_TO_OPTION = {
     0x00: "5s",
     0x01: "10s",
@@ -376,12 +385,14 @@ def build_advanced_audio_data(
     low_cut_slope: int,
     acoustic_space: int,
     desktop_mode: bool,
+    *,
+    current_data: bytes,
 ) -> bytes:
-    """Build the MR-series advanced audio write payload."""
-    return bytes(
+    """Update tuning while preserving the reported sound mode and index."""
+    if len(current_data) != 7:
+        raise ValueError("MR3 audio settings require a seven-byte D5 response")
+    return current_data[:2] + bytes(
         (
-            0x00,
-            0x02,
             (low_cut_frequency >> 8) & 0xFF,
             low_cut_frequency & 0xFF,
             low_cut_slope,

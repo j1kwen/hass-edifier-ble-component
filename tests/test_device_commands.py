@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import unittest
 from unittest.mock import create_autospec
 
@@ -107,17 +108,97 @@ class DeviceCommandTest(unittest.IsolatedAsyncioTestCase):
             lambda: None,
         )
         device._async_send_command = self.device._async_send_command
-        device.state.features.flags["AdvancedAudio"] = True
-        device.state.low_cut_frequency = 35
-        device.state.low_cut_slope = 3
-        device.state.acoustic_space = 0
-        device.state.desktop_mode = False
+        device._update_state(
+            EdifierFrame(0xBB, 0xD5, bytes.fromhex("01 01 00 23 03 00 00"))
+        )
 
         await device.async_set_low_cut_frequency(100)
 
         self.assertEqual(
-            self.sent[-1], (0xC4, bytes.fromhex("00 02 00 64 03 00 00"))
+            self.sent[-1], (0xC4, bytes.fromhex("01 01 00 64 03 00 00"))
         )
+        self.assertEqual(device.state.eq_mode, "music")
+
+    async def test_mr3_modes_preserve_acoustic_tuning(self) -> None:
+        """MR3 mode writes echo the other six D5 bytes unchanged."""
+        device = EdifierDevice(
+            "AA:BB:CC:DD:EE:FF",
+            MODELS_BY_SERVICE_UUID[MR3_SERVICE_UUID],
+            lambda: None,
+        )
+        device._async_send_command = self.device._async_send_command
+        tuning = bytes.fromhex("01 00 23 03 04 01")
+        for code, option in ((0, "monitor"), (1, "music"), (2, "custom")):
+            with self.subTest(option=option):
+                device._update_state(EdifierFrame(0xBB, 0xD5, b"\x01" + tuning))
+                self.assertEqual(device.state.eq_mode, "music")
+                await device.async_set_eq_mode(option)
+                self.assertEqual(self.sent[-1], (0xC4, bytes((code,)) + tuning))
+                self.assertEqual(device.state.eq_mode, option)
+                self.assertEqual(device.state.low_cut_frequency, 35)
+                self.assertEqual(device.state.acoustic_space, 4)
+                self.assertTrue(device.state.desktop_mode)
+                device._update_state(EdifierFrame(0xBB, 0xC4, b"\x01"))
+                self.assertEqual(device.state.eq_mode, option)
+
+    async def test_mr3_simultaneous_mode_and_tuning_changes(self) -> None:
+        """Queued writes must not overwrite each other's shared settings."""
+        device = EdifierDevice(
+            "AA:BB:CC:DD:EE:FF",
+            MODELS_BY_SERVICE_UUID[MR3_SERVICE_UUID],
+            lambda: None,
+        )
+        device._update_state(
+            EdifierFrame(0xBB, 0xD5, bytes.fromhex("01 01 00 23 03 00 00"))
+        )
+
+        async def send(command: int, data: bytes = b"", timeout: float = 0):
+            self.sent.append((command, data))
+            await asyncio.sleep(0)
+
+        device._async_send_command = send  # type: ignore[method-assign]
+        await asyncio.gather(
+            device.async_set_eq_mode("monitor"),
+            device.async_set_low_cut_frequency(100),
+        )
+        self.assertEqual(
+            self.sent[-1], (0xC4, bytes.fromhex("00 01 00 64 03 00 00"))
+        )
+        self.assertEqual(device.state.eq_mode, "monitor")
+        self.assertEqual(device.state.low_cut_frequency, 100)
+
+    async def test_mr3_modes_require_initialized_tuning(self) -> None:
+        """Do not invent tuning bytes or accept N300-only modes on MR3."""
+        device = EdifierDevice(
+            "AA:BB:CC:DD:EE:FF",
+            MODELS_BY_SERVICE_UUID[MR3_SERVICE_UUID],
+            lambda: None,
+        )
+        device._async_send_command = self.device._async_send_command
+        with self.assertRaises(ValueError):
+            await device.async_set_eq_mode("music")
+        device._update_state(
+            EdifierFrame(0xBB, 0xD5, bytes.fromhex("01 01 00 23 03 00 00"))
+        )
+        with self.assertRaises(ValueError):
+            await device.async_set_eq_mode("game")
+        self.assertEqual(self.sent, [])
+
+    async def test_mr3_eq_requires_custom_mode(self) -> None:
+        """Editing the custom EQ must not change a built-in mode."""
+        device = EdifierDevice(
+            "AA:BB:CC:DD:EE:FF",
+            MODELS_BY_SERVICE_UUID[MR3_SERVICE_UUID],
+            lambda: None,
+        )
+        device._async_send_command = self.device._async_send_command
+        device.state.eq_band_indices["eq_1khz"] = 4
+        device.state.eq_mode = "music"
+        with self.assertRaises(ValueError):
+            await device.async_set_eq_band("eq_1khz", 1.0)
+        device.state.eq_mode = "custom"
+        await device.async_set_eq_band("eq_1khz", 1.0)
+        self.assertEqual(self.sent[-1], (0x44, bytes.fromhex("00 04 03 e8 08")))
 
 
 class DeviceLoggingTest(unittest.IsolatedAsyncioTestCase):

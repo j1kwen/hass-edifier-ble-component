@@ -77,7 +77,8 @@
           "monitor": "Monitor",
           "game": "Game",
           "movie": "Movie",
-          "diy": "DIY"
+          "diy": "DIY",
+          "custom": "Custom"
         }
       },
       "low_cut_slope": {

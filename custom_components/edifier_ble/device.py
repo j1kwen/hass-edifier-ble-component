@@ -47,9 +47,11 @@ from .protocol import (
     EQ_BANDS_BY_KEY,
     EQ_MODE_TO_OPTION,
     LIGHT_TIME_TO_OPTION,
+    MR3_EQ_MODE_TO_OPTION,
     OPTION_TO_DISTANCE,
     OPTION_TO_EQ_MODE,
     OPTION_TO_LIGHT_TIME,
+    OPTION_TO_MR3_EQ_MODE,
     OPTION_TO_SOURCE,
     PLAY_OPTION_TO_COMMAND,
     SOURCE_TO_OPTION,
@@ -91,6 +93,8 @@ class EdifierDevice:
         self._client: BleakClientWithServiceCache | None = None
         self._connect_lock = asyncio.Lock()
         self._write_lock = asyncio.Lock()
+        self._audio_lock = asyncio.Lock()
+        self._mr3_audio_data: bytes | None = None
         self._pending: dict[int, list[asyncio.Future[bytes]]] = {}
         self._stream_parser = PacketStreamParser()
         self._state = EdifierState()
@@ -191,6 +195,7 @@ class EdifierDevice:
 
             self._client = client
             self._stream_parser = PacketStreamParser()
+            self._mr3_audio_data = None
             self._state.connected = True
             self._notify_state_changed()
             _LOGGER.debug(
@@ -489,9 +494,19 @@ class EdifierDevice:
         elif command == CMD_SET_BEEP:
             if data:
                 state.beep = data[-1] == 0x01
-        elif command == CMD_QUERY_EQ_MODE:
+        elif command == CMD_QUERY_EQ_MODE or (
+            command == CMD_SET_EQ_MODE and self.model.model == "MR3"
+        ):
             if self.model.model == "MR3":
                 if advanced := parse_advanced_audio(data):
+                    self._mr3_audio_data = data
+                    state.eq_mode = MR3_EQ_MODE_TO_OPTION.get(data[0])
+                    if state.eq_mode is None:
+                        _LOGGER.warning(
+                            "%s: Unknown MR3 sound mode: 0x%02X",
+                            self.address,
+                            data[0],
+                        )
                     (
                         state.low_cut_frequency,
                         state.low_cut_slope,
@@ -563,6 +578,7 @@ class EdifierDevice:
             state.eq_mode = None
             state.eq_bands.clear()
             state.eq_band_indices.clear()
+            self._mr3_audio_data = None
         if not features.supports("SmartLight"):
             state.light_time = None
             state.light_distance = None
@@ -602,7 +618,11 @@ class EdifierDevice:
     async def async_set_eq_mode(self, option: str) -> None:
         """Set the equalizer preset."""
         if self.model.model == "MR3":
-            raise ValueError("Equalizer presets are not supported for this model")
+            mode = OPTION_TO_MR3_EQ_MODE.get(option)
+            if mode is None:
+                raise ValueError(f"Unsupported MR3 sound mode: {option}")
+            await self._async_set_mr3_audio(eq_mode=mode)
+            return
         mode = OPTION_TO_EQ_MODE.get(option)
         if mode is None:
             raise ValueError(f"Unsupported equalizer mode: {option}")
@@ -615,8 +635,11 @@ class EdifierDevice:
         band = EQ_BANDS_BY_KEY.get(key)
         if band is None:
             raise ValueError(f"Unsupported equalizer band: {key}")
-        if self.model.model != "MR3" and self._state.eq_mode != "diy":
-            raise ValueError("Equalizer bands can only be changed in DIY mode")
+        custom_mode = "custom" if self.model.model == "MR3" else "diy"
+        if self._state.eq_mode != custom_mode:
+            raise ValueError(
+                f"Equalizer bands can only be changed in {custom_mode} mode"
+            )
         if not -3.0 <= gain_db <= 3.0:
             raise ValueError("Equalizer gain must be between -3.0 and 3.0 dB")
         if self.model.model == "MR3":
@@ -634,50 +657,54 @@ class EdifierDevice:
         """Set the MR3 low-cut frequency."""
         if not 20 <= frequency <= 20000:
             raise ValueError("Low-cut frequency must be between 20 and 20000 Hz")
-        await self._async_set_advanced_audio(low_cut_frequency=frequency)
+        await self._async_set_mr3_audio(low_cut_frequency=frequency)
 
     async def async_set_low_cut_slope(self, option: str) -> None:
         """Set the MR3 low-cut slope."""
         slopes = {"6dB": 0, "12dB": 1, "18dB": 2, "24dB": 3}
         if option not in slopes:
             raise ValueError(f"Unsupported low-cut slope: {option}")
-        await self._async_set_advanced_audio(low_cut_slope=slopes[option])
+        await self._async_set_mr3_audio(low_cut_slope=slopes[option])
 
     async def async_set_acoustic_space(self, option: str) -> None:
         """Set the MR3 acoustic-space attenuation."""
         if option not in ("0", "2", "4", "6"):
             raise ValueError(f"Unsupported acoustic-space value: {option}")
-        await self._async_set_advanced_audio(acoustic_space=int(option))
+        await self._async_set_mr3_audio(acoustic_space=int(option))
 
     async def async_set_desktop_mode(self, enabled: bool) -> None:
         """Set the MR3 desktop mode."""
-        await self._async_set_advanced_audio(desktop_mode=enabled)
+        await self._async_set_mr3_audio(desktop_mode=enabled)
 
-    async def _async_set_advanced_audio(self, **changes: int | bool) -> None:
-        """Write all MR3 advanced audio settings, preserving unchanged values."""
-        state = self._state
-        if not state.features.supports("AdvancedAudio"):
-            raise ValueError("Advanced audio settings are not available")
-        frequency = changes.get(
-            "low_cut_frequency", state.low_cut_frequency
-        )
-        slope = changes.get("low_cut_slope", state.low_cut_slope)
-        acoustic = changes.get("acoustic_space", state.acoustic_space)
-        desktop = changes.get("desktop_mode", state.desktop_mode)
-        if None in (frequency, slope, acoustic, desktop):
-            raise ValueError("Advanced audio settings have not been initialized")
+    async def _async_set_mr3_audio(self, **changes: int | bool) -> None:
+        """Serialize MR3 read-modify-writes of the shared sound/tuning payload."""
+        async with self._audio_lock:
+            state = self._state
+            if not state.features.supports("AdvancedAudio"):
+                raise ValueError("MR3 audio settings are not available")
+            current_data = self._mr3_audio_data
+            frequency = changes.get("low_cut_frequency", state.low_cut_frequency)
+            slope = changes.get("low_cut_slope", state.low_cut_slope)
+            acoustic = changes.get("acoustic_space", state.acoustic_space)
+            desktop = changes.get("desktop_mode", state.desktop_mode)
+            if (
+                current_data is None
+                or frequency is None
+                or slope is None
+                or acoustic is None
+                or desktop is None
+            ):
+                raise ValueError("MR3 audio settings have not been initialized")
 
-        await self._async_send_command(
-            CMD_SET_ADVANCED_AUDIO,
-            build_advanced_audio_data(
-                int(frequency), int(slope), int(acoustic), bool(desktop)
-            ),
-        )
-        state.low_cut_frequency = int(frequency)
-        state.low_cut_slope = int(slope)
-        state.acoustic_space = int(acoustic)
-        state.desktop_mode = bool(desktop)
-        self._notify_state_changed()
+            payload = build_advanced_audio_data(
+                int(frequency), int(slope), int(acoustic), bool(desktop),
+                current_data=current_data,
+            )
+            if "eq_mode" in changes:
+                payload = bytes((int(changes["eq_mode"]),)) + payload[1:]
+            await self._async_send_command(CMD_SET_ADVANCED_AUDIO, payload)
+            self._update_state(EdifierFrame(0xBB, CMD_QUERY_EQ_MODE, payload))
+            self._notify_state_changed()
 
     async def async_set_light(
         self, option: str | None = None, *, distance: str | None = None

@@ -77,7 +77,8 @@
           "monitor": "监听",
           "game": "游戏",
           "movie": "电影",
-          "diy": "DIY"
+          "diy": "DIY",
+          "custom": "自定义"
         }
       },
       "low_cut_slope": {
