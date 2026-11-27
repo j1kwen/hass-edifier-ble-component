@@ -34,7 +34,7 @@ MODELS_BY_SERVICE_UUID: dict[str, EdifierModel] = {
     MR3_SERVICE_UUID: EdifierModel(
         service_uuid=MR3_SERVICE_UUID,
         model="MR3",
-        model_code="EDF-100081",
+        model_code="EDF100081",
         manufacturer=MANUFACTURER,
     ),
 }

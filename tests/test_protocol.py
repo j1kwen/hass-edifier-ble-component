@@ -182,7 +182,7 @@ class ModelMappingTest(unittest.TestCase):
         self.assertIsNotNone(model)
         assert model is not None
         self.assertEqual(model.model, "MR3")
-        self.assertEqual(model.model_code, "EDF-100081")
+        self.assertEqual(model.model_code, "EDF100081")
 
 
 if __name__ == "__main__":

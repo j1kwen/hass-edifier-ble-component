@@ -22,7 +22,7 @@ A Home Assistant custom integration for controlling Edifier speakers over Blueto
 | Model | Model Code | Advertised Service UUID |
 |---|---|---|
 | Edifier N300 | EDF100074 | `00007e00-0000-1000-8000-00805f9b34fb` |
-| Edifier MR3 | EDF-100081 | `0000f300-0000-1000-8000-00805f9b34fb` |
+| Edifier MR3 | EDF100081 | `0000f300-0000-1000-8000-00805f9b34fb` |
 
 Entity support is primarily driven by the `D8` feature bitmap. MR3 also has model-specific response formats for volume, its variable-band equalizer, and advanced audio controls; these are handled separately from N300.
 
