@@ -11,18 +11,30 @@ MANUFACTURER = "Edifier"
 CONF_MODEL = "model"
 CONF_CONNECTION_ENABLED = "connection_enabled"
 
+# Kept for backwards compatibility; refers to the Edifier N300 service UUID.
 TARGET_SERVICE_UUID = "00007e00-0000-1000-8000-00805f9b34fb"
+N300_SERVICE_UUID = TARGET_SERVICE_UUID
+MR3_SERVICE_UUID = "0000f300-0000-1000-8000-00805f9b34fb"
 EDIFIER_COMPANY_ID = 0x07E0
 
+# The vendor-specific GATT service UUID is informational only; the write and
+# notify characteristics below are used directly and are shared by every
+# known model.
 GATT_SERVICE_UUID = "48097e01-1a48-11e9-ab14-d663bd873d93"
 WRITE_CHARACTERISTIC_UUID = "48090002-1a48-11e9-ab14-d663bd873d93"
 NOTIFY_CHARACTERISTIC_UUID = "48090001-1a48-11e9-ab14-d663bd873d93"
 
 MODELS_BY_SERVICE_UUID: dict[str, EdifierModel] = {
-    TARGET_SERVICE_UUID: EdifierModel(
-        service_uuid=TARGET_SERVICE_UUID,
+    N300_SERVICE_UUID: EdifierModel(
+        service_uuid=N300_SERVICE_UUID,
         model="N300",
         model_code="EDF100074",
+        manufacturer=MANUFACTURER,
+    ),
+    MR3_SERVICE_UUID: EdifierModel(
+        service_uuid=MR3_SERVICE_UUID,
+        model="MR3",
+        model_code="EDF100081",
         manufacturer=MANUFACTURER,
     ),
 }
@@ -52,6 +64,7 @@ CMD_QUERY_BEEP = 0x86
 CMD_SET_BEEP = 0x87
 CMD_PLAY_CONTROL = 0xC2
 CMD_SET_EQ_MODE = 0xC4
+CMD_SET_ADVANCED_AUDIO = 0xC4
 CMD_GET_FIRMWARE = 0xC6
 CMD_GET_MAC = 0xC8
 CMD_GET_DEVICE_NAME = 0xC9
@@ -69,6 +82,10 @@ KEY_SOURCE = "source"
 KEY_VOLUME = "volume"
 KEY_MEDIA_PLAYER = "media_player"
 KEY_EQ_MODE = "eq_mode"
+KEY_LOW_CUT_FREQUENCY = "low_cut_frequency"
+KEY_LOW_CUT_SLOPE = "low_cut_slope"
+KEY_ACOUSTIC_SPACE = "acoustic_space"
+KEY_DESKTOP_MODE = "desktop_mode"
 KEY_LIGHT_TIME = "light_time"
 KEY_LIGHT_DISTANCE = "light_distance"
 KEY_BEEP = "beep"

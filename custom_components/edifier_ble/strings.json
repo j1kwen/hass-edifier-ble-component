@@ -30,14 +30,26 @@
       "volume": {
         "name": "Volume"
       },
+      "low_cut_frequency": {
+        "name": "Low-cut frequency"
+      },
       "eq_62hz": {
         "name": "62 Hz equalizer"
+      },
+      "eq_125hz": {
+        "name": "125 Hz equalizer"
       },
       "eq_250hz": {
         "name": "250 Hz equalizer"
       },
+      "eq_500hz": {
+        "name": "500 Hz equalizer"
+      },
       "eq_1khz": {
         "name": "1 kHz equalizer"
+      },
+      "eq_2khz": {
+        "name": "2 kHz equalizer"
       },
       "eq_4khz": {
         "name": "4 kHz equalizer"
@@ -65,7 +77,26 @@
           "monitor": "Monitor",
           "game": "Game",
           "movie": "Movie",
-          "diy": "DIY"
+          "diy": "DIY",
+          "custom": "Custom"
+        }
+      },
+      "low_cut_slope": {
+        "name": "Low-cut slope",
+        "state": {
+          "6dB": "6 dB/oct",
+          "12dB": "12 dB/oct",
+          "18dB": "18 dB/oct",
+          "24dB": "24 dB/oct"
+        }
+      },
+      "acoustic_space": {
+        "name": "Acoustic space",
+        "state": {
+          "0": "0 dB",
+          "2": "-2 dB",
+          "4": "-4 dB",
+          "6": "-6 dB"
         }
       },
       "light_time": {
@@ -100,6 +131,9 @@
       },
       "beep": {
         "name": "Bluetooth prompt tone"
+      },
+      "desktop_mode": {
+        "name": "Desktop mode"
       }
     },
     "text": {

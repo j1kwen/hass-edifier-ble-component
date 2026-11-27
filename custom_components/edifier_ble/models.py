@@ -36,8 +36,14 @@ class EdifierState:
     mac_address: str | None = None
     source: str | None = None
     volume: int | None = None
+    max_volume: int = 16
     eq_mode: str | None = None
     eq_bands: dict[str, float] = field(default_factory=dict)
+    eq_band_indices: dict[str, int] = field(default_factory=dict)
+    low_cut_frequency: int | None = None
+    low_cut_slope: int | None = None
+    acoustic_space: int | None = None
+    desktop_mode: bool | None = None
     light_time: str | None = None
     light_distance: str | None = None
     beep: bool | None = None
@@ -54,6 +60,7 @@ class EdifierMediaState:
 
     state: str
     volume: int | None
+    max_volume: int
     muted: bool
     title: str | None
     artist: str | None

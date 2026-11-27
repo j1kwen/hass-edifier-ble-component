@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
 import unittest
+from unittest.mock import create_autospec
+
+from bleak.exc import BleakError
+from bleak_retry_connector import BleakClientWithServiceCache
 
 from custom_components.edifier_ble.const import (
     MODELS_BY_SERVICE_UUID,
+    MR3_SERVICE_UUID,
     TARGET_SERVICE_UUID,
+    WRITE_CHARACTERISTIC_UUID,
 )
 from custom_components.edifier_ble.device import EdifierDevice
-from custom_components.edifier_ble.protocol import parse_d8_features
+from custom_components.edifier_ble.protocol import EdifierFrame, parse_d8_features
 
 N300_FEATURES = bytes.fromhex("0000010401010100000001010A130100002004030430")
 
@@ -77,6 +84,208 @@ class DeviceCommandTest(unittest.IsolatedAsyncioTestCase):
         await self.device.async_mute_volume(False)
         self.assertEqual(self.sent[-2], (0x67, bytes.fromhex("00")))
         self.assertEqual(self.sent[-1], (0x67, bytes.fromhex("0B")))
+
+    async def test_mr3_volume_uses_device_reported_maximum(self) -> None:
+        """The MR3's 30-step range is accepted and encoded as one byte."""
+        device = EdifierDevice(
+            "AA:BB:CC:DD:EE:FF",
+            MODELS_BY_SERVICE_UUID[MR3_SERVICE_UUID],
+            lambda: None,
+        )
+        device._async_send_command = self.device._async_send_command
+        device._update_state(EdifierFrame(0xBB, 0x66, bytes.fromhex("1e 14")))
+        await device.async_set_volume(30)
+
+        self.assertEqual(device.state.max_volume, 30)
+        self.assertEqual(device.state.volume, 30)
+        self.assertEqual(self.sent[-1], (0x67, bytes.fromhex("1e")))
+
+    async def test_mr3_advanced_audio_write_preserves_other_values(self) -> None:
+        """Changing one advanced value writes the full initialized state."""
+        device = EdifierDevice(
+            "AA:BB:CC:DD:EE:FF",
+            MODELS_BY_SERVICE_UUID[MR3_SERVICE_UUID],
+            lambda: None,
+        )
+        device._async_send_command = self.device._async_send_command
+        device._update_state(
+            EdifierFrame(0xBB, 0xD5, bytes.fromhex("01 01 00 23 03 00 00"))
+        )
+
+        await device.async_set_low_cut_frequency(100)
+
+        self.assertEqual(
+            self.sent[-1], (0xC4, bytes.fromhex("01 01 00 64 03 00 00"))
+        )
+        self.assertEqual(device.state.eq_mode, "music")
+
+    async def test_mr3_modes_preserve_acoustic_tuning(self) -> None:
+        """MR3 mode writes echo the other six D5 bytes unchanged."""
+        device = EdifierDevice(
+            "AA:BB:CC:DD:EE:FF",
+            MODELS_BY_SERVICE_UUID[MR3_SERVICE_UUID],
+            lambda: None,
+        )
+        device._async_send_command = self.device._async_send_command
+        tuning = bytes.fromhex("01 00 23 03 04 01")
+        for code, option in ((0, "monitor"), (1, "music"), (2, "custom")):
+            with self.subTest(option=option):
+                device._update_state(EdifierFrame(0xBB, 0xD5, b"\x01" + tuning))
+                self.assertEqual(device.state.eq_mode, "music")
+                await device.async_set_eq_mode(option)
+                self.assertEqual(self.sent[-1], (0xC4, bytes((code,)) + tuning))
+                self.assertEqual(device.state.eq_mode, option)
+                self.assertEqual(device.state.low_cut_frequency, 35)
+                self.assertEqual(device.state.acoustic_space, 4)
+                self.assertTrue(device.state.desktop_mode)
+                device._update_state(EdifierFrame(0xBB, 0xC4, b"\x01"))
+                self.assertEqual(device.state.eq_mode, option)
+
+    async def test_mr3_simultaneous_mode_and_tuning_changes(self) -> None:
+        """Queued writes must not overwrite each other's shared settings."""
+        device = EdifierDevice(
+            "AA:BB:CC:DD:EE:FF",
+            MODELS_BY_SERVICE_UUID[MR3_SERVICE_UUID],
+            lambda: None,
+        )
+        device._update_state(
+            EdifierFrame(0xBB, 0xD5, bytes.fromhex("01 01 00 23 03 00 00"))
+        )
+
+        async def send(command: int, data: bytes = b"", timeout: float = 0):
+            self.sent.append((command, data))
+            await asyncio.sleep(0)
+
+        device._async_send_command = send  # type: ignore[method-assign]
+        await asyncio.gather(
+            device.async_set_eq_mode("monitor"),
+            device.async_set_low_cut_frequency(100),
+        )
+        self.assertEqual(
+            self.sent[-1], (0xC4, bytes.fromhex("00 01 00 64 03 00 00"))
+        )
+        self.assertEqual(device.state.eq_mode, "monitor")
+        self.assertEqual(device.state.low_cut_frequency, 100)
+
+    async def test_mr3_modes_require_initialized_tuning(self) -> None:
+        """Do not invent tuning bytes or accept N300-only modes on MR3."""
+        device = EdifierDevice(
+            "AA:BB:CC:DD:EE:FF",
+            MODELS_BY_SERVICE_UUID[MR3_SERVICE_UUID],
+            lambda: None,
+        )
+        device._async_send_command = self.device._async_send_command
+        with self.assertRaises(ValueError):
+            await device.async_set_eq_mode("music")
+        device._update_state(
+            EdifierFrame(0xBB, 0xD5, bytes.fromhex("01 01 00 23 03 00 00"))
+        )
+        with self.assertRaises(ValueError):
+            await device.async_set_eq_mode("game")
+        self.assertEqual(self.sent, [])
+
+    async def test_mr3_eq_requires_custom_mode(self) -> None:
+        """Editing the custom EQ must not change a built-in mode."""
+        device = EdifierDevice(
+            "AA:BB:CC:DD:EE:FF",
+            MODELS_BY_SERVICE_UUID[MR3_SERVICE_UUID],
+            lambda: None,
+        )
+        device._async_send_command = self.device._async_send_command
+        device.state.eq_band_indices["eq_1khz"] = 4
+        device.state.eq_mode = "music"
+        with self.assertRaises(ValueError):
+            await device.async_set_eq_band("eq_1khz", 1.0)
+        device.state.eq_mode = "custom"
+        await device.async_set_eq_band("eq_1khz", 1.0)
+        self.assertEqual(self.sent[-1], (0x44, bytes.fromhex("00 04 03 e8 08")))
+
+
+class DeviceLoggingTest(unittest.IsolatedAsyncioTestCase):
+    """Test transport diagnostics without a real BLE connection."""
+
+    async def asyncSetUp(self) -> None:
+        """Create a device with a mocked BLE client."""
+        self.device = EdifierDevice(
+            "AA:BB:CC:DD:EE:FF",
+            MODELS_BY_SERVICE_UUID[TARGET_SERVICE_UUID],
+            lambda: None,
+        )
+        self.client = create_autospec(BleakClientWithServiceCache, instance=True)
+        self.client.is_connected = True
+        self.device._client = self.client
+
+    async def test_fragmented_response_logs_packets_and_features(self) -> None:
+        """Log raw fragments and the assembled D8 frame without losing its response."""
+        notification = bytes.fromhex(
+            "bb ec d8 00 16 0000010401010100000001010A130100002004030430 18"
+        )
+
+        def respond(
+            _characteristic: str, _packet: bytes, *, response: bool
+        ) -> None:
+            self.device._notification_handler(None, bytearray(notification[:4]))
+            self.device._notification_handler(None, bytearray(notification[4:]))
+
+        self.client.write_gatt_char.side_effect = respond
+        with self.assertLogs("custom_components.edifier_ble.device", "DEBUG") as logs:
+            result = await self.device._async_query(0xD8)
+
+        messages = "\n".join(logs.output)
+        self.assertIn("AA:BB:CC:DD:EE:FF: TX command=0xD8", messages)
+        self.assertIn("packet=aa ec d8 00 00 6e", messages)
+        self.assertIn("RX notification (4 bytes): bb ec d8 00", messages)
+        self.assertIn("No complete valid frame", messages)
+        self.assertNotIn("Ignored malformed notification", messages)
+        self.assertIn(
+            f"RX frame header=0xBB command=0xD8 data={N300_FEATURES.hex(' ')}",
+            messages,
+        )
+        self.assertIn("D8 supported features:", messages)
+        self.assertIn("SmartLight", messages)
+        self.assertIn("max device name length: 35 bytes", messages)
+        self.assertEqual(result, N300_FEATURES)
+        self.assertTrue(self.device.state.features.supports("SmartLight"))
+        self.assertEqual(self.device._pending, {})
+        self.client.write_gatt_char.assert_awaited_once_with(
+            WRITE_CHARACTERISTIC_UUID,
+            bytes.fromhex("aa ec d8 00 00 6e"),
+            response=False,
+        )
+
+    async def test_query_timeout_is_logged_and_propagated(self) -> None:
+        """Keep query failures explicit while logging the command and timeout."""
+        with self.assertLogs("custom_components.edifier_ble.device", "DEBUG") as logs:
+            with self.assertRaisesRegex(
+                BleakError, "Timed out waiting for response to command 0xD8"
+            ):
+                await self.device._async_query(0xD8, timeout=0.01)
+
+        self.assertIn(
+            "Response timeout: command=0xD8, timeout=0.01s",
+            "\n".join(logs.output),
+        )
+        self.assertEqual(self.device._pending, {})
+
+    async def test_optional_ack_timeout_remains_nonfatal(self) -> None:
+        """Log a missing optional acknowledgement without changing setter behavior."""
+        with self.assertLogs("custom_components.edifier_ble.device", "DEBUG") as logs:
+            await self.device._async_send_command(0x67, b"\x05", timeout=0.01)
+
+        messages = "\n".join(logs.output)
+        self.assertIn("Response timeout: command=0x67, timeout=0.01s", messages)
+        self.assertIn("Command 0x67 sent without a response", messages)
+        self.assertEqual(self.device._pending, {})
+
+    async def test_write_failure_is_logged_and_propagated(self) -> None:
+        """Log the failing command and preserve the original transport error."""
+        self.client.write_gatt_char.side_effect = BleakError("write failed")
+        with self.assertLogs("custom_components.edifier_ble.device", "DEBUG") as logs:
+            with self.assertRaisesRegex(BleakError, "write failed"):
+                await self.device._async_query(0xD8)
+
+        self.assertIn("Failed to write command 0xD8", "\n".join(logs.output))
+        self.assertEqual(self.device._pending, {})
 
 
 if __name__ == "__main__":

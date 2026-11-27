@@ -10,9 +10,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     DOMAIN,
+    KEY_ACOUSTIC_SPACE,
     KEY_EQ_MODE,
     KEY_LIGHT_DISTANCE,
     KEY_LIGHT_TIME,
+    KEY_LOW_CUT_SLOPE,
     KEY_SOURCE,
 )
 from .coordinator import EdifierBluetoothDataProcessor, EdifierCoordinator
@@ -60,6 +62,10 @@ class EdifierSelect(EdifierControlEntity, SelectEntity):
                 await self.coordinator.device.async_set_source(option)
             elif key == KEY_EQ_MODE:
                 await self.coordinator.device.async_set_eq_mode(option)
+            elif key == KEY_LOW_CUT_SLOPE:
+                await self.coordinator.device.async_set_low_cut_slope(option)
+            elif key == KEY_ACOUSTIC_SPACE:
+                await self.coordinator.device.async_set_acoustic_space(option)
             elif key == KEY_LIGHT_TIME:
                 await self.coordinator.device.async_set_light(option)
             elif key == KEY_LIGHT_DISTANCE:

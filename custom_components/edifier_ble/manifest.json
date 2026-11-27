@@ -5,6 +5,10 @@
     {
       "service_uuid": "00007e00-0000-1000-8000-00805f9b34fb",
       "connectable": true
+    },
+    {
+      "service_uuid": "0000f300-0000-1000-8000-00805f9b34fb",
+      "connectable": true
     }
   ],
   "codeowners": [

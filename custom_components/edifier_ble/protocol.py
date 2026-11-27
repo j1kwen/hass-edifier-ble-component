@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import struct
+from dataclasses import dataclass
 
 from .models import EdifierFeatures
 
@@ -26,6 +26,15 @@ EQ_MODE_TO_OPTION = {
     0x04: "diy",
 }
 OPTION_TO_EQ_MODE = {value: key for key, value in EQ_MODE_TO_OPTION.items()}
+
+MR3_EQ_MODE_TO_OPTION = {
+    0x01: "music",
+    0x00: "monitor",
+    0x02: "custom",
+}
+OPTION_TO_MR3_EQ_MODE = {
+    value: key for key, value in MR3_EQ_MODE_TO_OPTION.items()
+}
 
 LIGHT_TIME_TO_OPTION = {
     0x00: "5s",
@@ -64,8 +73,11 @@ class EqBand:
 
 EQ_BANDS: tuple[EqBand, ...] = (
     EqBand("eq_62hz", 0x00, 62, 0x00, 0x3E, "62 Hz"),
+    EqBand("eq_125hz", 0x01, 125, 0x00, 0x7D, "125 Hz"),
     EqBand("eq_250hz", 0x01, 250, 0x00, 0xFA, "250 Hz"),
+    EqBand("eq_500hz", 0x02, 500, 0x01, 0xF4, "500 Hz"),
     EqBand("eq_1khz", 0x02, 1000, 0x03, 0xE8, "1 kHz"),
+    EqBand("eq_2khz", 0x04, 2000, 0x07, 0xD0, "2 kHz"),
     EqBand("eq_4khz", 0x03, 4000, 0x0F, 0xA0, "4 kHz"),
     EqBand("eq_8khz", 0x04, 8000, 0x1F, 0x40, "8 kHz"),
     EqBand("eq_16khz", 0x05, 16000, 0x3E, 0x80, "16 kHz"),
@@ -296,6 +308,96 @@ def build_eq_band_data(band: EqBand, gain_db: float) -> bytes:
             band.frequency_lo,
             gain_to_code(gain_db),
             0x07,
+        )
+    )
+
+
+def build_mr3_eq_band_data(index: int, band: EqBand, gain_db: float) -> bytes:
+    """Build the MR-series single-band EQ payload."""
+    return bytes(
+        (
+            0x00,
+            index,
+            band.frequency_hi,
+            band.frequency_lo,
+            gain_to_code(gain_db),
+        )
+    )
+
+
+def parse_mr3_eq_bands(data: bytes) -> tuple[dict[str, float], dict[str, int]]:
+    """Parse the variable-band MR-series EQ response."""
+    if len(data) < 2:
+        return {}, {}
+
+    band_count = data[1]
+    if not 1 <= band_count <= len(EQ_BANDS):
+        return {}, {}
+
+    gains: dict[str, float] = {}
+    indices: dict[str, int] = {}
+    offset = 2
+    for band_number in range(band_count):
+        if offset >= len(data):
+            return {}, {}
+        index = data[offset]
+        offset += 1
+        if index >= band_count or index in indices.values():
+            return {}, {}
+        if band_number == 0:
+            if offset >= len(data):
+                return {}, {}
+            offset += 1
+        if offset + 3 > len(data):
+            return {}, {}
+
+        frequency = (data[offset] << 8) | data[offset + 1]
+        gain_code = data[offset + 2]
+        offset += 3
+        band = EQ_BANDS_BY_FREQUENCY.get(frequency)
+        if band is None or gain_code > 12:
+            return {}, {}
+        if band.key in gains:
+            return {}, {}
+        gains[band.key] = code_to_gain(gain_code)
+        indices[band.key] = index
+
+    return gains, indices
+
+
+def parse_advanced_audio(data: bytes) -> tuple[int, int, int, bool] | None:
+    """Parse the MR-series advanced audio response."""
+    if len(data) != 7:
+        return None
+    low_cut_frequency = (data[2] << 8) | data[3]
+    if (
+        not 20 <= low_cut_frequency <= 20000
+        or data[4] > 3
+        or data[5] not in (0, 2, 4, 6)
+        or data[6] not in (0, 1)
+    ):
+        return None
+    return low_cut_frequency, data[4], data[5], data[6] == 1
+
+
+def build_advanced_audio_data(
+    low_cut_frequency: int,
+    low_cut_slope: int,
+    acoustic_space: int,
+    desktop_mode: bool,
+    *,
+    current_data: bytes,
+) -> bytes:
+    """Update tuning while preserving the reported sound mode and index."""
+    if len(current_data) != 7:
+        raise ValueError("MR3 audio settings require a seven-byte D5 response")
+    return current_data[:2] + bytes(
+        (
+            (low_cut_frequency >> 8) & 0xFF,
+            low_cut_frequency & 0xFF,
+            low_cut_slope,
+            acoustic_space,
+            int(desktop_mode),
         )
     )
 

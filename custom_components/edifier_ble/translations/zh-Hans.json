@@ -30,14 +30,26 @@
       "volume": {
         "name": "音量"
       },
+      "low_cut_frequency": {
+        "name": "低切频率"
+      },
       "eq_62hz": {
         "name": "62 Hz 均衡器"
+      },
+      "eq_125hz": {
+        "name": "125 Hz 均衡器"
       },
       "eq_250hz": {
         "name": "250 Hz 均衡器"
       },
+      "eq_500hz": {
+        "name": "500 Hz 均衡器"
+      },
       "eq_1khz": {
         "name": "1 kHz 均衡器"
+      },
+      "eq_2khz": {
+        "name": "2 kHz 均衡器"
       },
       "eq_4khz": {
         "name": "4 kHz 均衡器"
@@ -65,7 +77,26 @@
           "monitor": "监听",
           "game": "游戏",
           "movie": "电影",
-          "diy": "DIY"
+          "diy": "DIY",
+          "custom": "自定义"
+        }
+      },
+      "low_cut_slope": {
+        "name": "低切斜率",
+        "state": {
+          "6dB": "6 dB/倍频程",
+          "12dB": "12 dB/倍频程",
+          "18dB": "18 dB/倍频程",
+          "24dB": "24 dB/倍频程"
+        }
+      },
+      "acoustic_space": {
+        "name": "声学空间",
+        "state": {
+          "0": "0 dB",
+          "2": "-2 dB",
+          "4": "-4 dB",
+          "6": "-6 dB"
         }
       },
       "light_time": {
@@ -100,6 +131,9 @@
       },
       "beep": {
         "name": "蓝牙提示音"
+      },
+      "desktop_mode": {
+        "name": "桌面模式"
       }
     },
     "text": {
