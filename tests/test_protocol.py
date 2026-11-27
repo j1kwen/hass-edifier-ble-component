@@ -6,16 +6,21 @@ import unittest
 
 from custom_components.edifier_ble.const import model_from_service_uuid
 from custom_components.edifier_ble.protocol import (
+    EQ_BANDS,
     EQ_BANDS_BY_KEY,
     PacketStreamParser,
+    build_advanced_audio_data,
     build_eq_band_data,
+    build_mr3_eq_band_data,
     build_packet,
     code_to_gain,
     gain_to_code,
+    parse_advanced_audio,
     parse_d8_features,
     parse_eq_bands,
     parse_frame,
     parse_media_info,
+    parse_mr3_eq_bands,
 )
 
 
@@ -109,6 +114,43 @@ class EqualizerTest(unittest.TestCase):
         data = bytes((0x03, 0x06)) + build_eq_band_data(band, 1.5)
         self.assertEqual(parse_eq_bands(data), {"eq_1khz": 1.5})
 
+    def test_parse_mr3_variable_band_response(self) -> None:
+        """MR3 bands are indexed records with a first-record padding byte."""
+        frequencies = (62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000)
+        records = bytearray((0x0C, len(frequencies), 0x00, 0x00))
+        for index, frequency in enumerate(frequencies):
+            if index:
+                records.append(index)
+            records.extend(frequency.to_bytes(2, "big"))
+            records.append(6)
+        records.extend(b"Custom EQ")
+
+        gains, indices = parse_mr3_eq_bands(bytes(records))
+
+        self.assertEqual(len(gains), 9)
+        self.assertEqual(gains["eq_125hz"], 0.0)
+        self.assertEqual(gains["eq_16khz"], 0.0)
+        self.assertEqual(indices["eq_125hz"], 1)
+        self.assertEqual(indices["eq_16khz"], 8)
+
+    def test_build_mr3_eq_band_payload(self) -> None:
+        """MR3 writes one indexed band without the N300 trailing marker."""
+        band = next(band for band in EQ_BANDS if band.frequency == 16000)
+        self.assertEqual(
+            build_mr3_eq_band_data(8, band, 1.5),
+            bytes.fromhex("00 08 3e 80 09"),
+        )
+
+    def test_parse_and_build_advanced_audio(self) -> None:
+        """Advanced audio values round-trip using the MR3 D5/C4 payload shape."""
+        response = bytes.fromhex("01 01 00 23 03 00 00")
+        self.assertEqual(parse_advanced_audio(response), (35, 3, 0, False))
+        self.assertEqual(
+            build_advanced_audio_data(35, 3, 0, False),
+            bytes.fromhex("00 02 00 23 03 00 00"),
+        )
+        self.assertIsNone(parse_advanced_audio(bytes.fromhex("01 01 00 23 04 00 00")))
+
 
 class MediaInfoTest(unittest.TestCase):
     """Test media notification decoding."""
@@ -131,6 +173,14 @@ class ModelMappingTest(unittest.TestCase):
         assert model is not None
         self.assertEqual(model.model, "N300")
         self.assertEqual(model.model_code, "EDF100074")
+
+    def test_mr3_uuid(self) -> None:
+        """The MR3 UUID should map to its product code."""
+        model = model_from_service_uuid("0000F300-0000-1000-8000-00805F9B34FB")
+        self.assertIsNotNone(model)
+        assert model is not None
+        self.assertEqual(model.model, "MR3")
+        self.assertEqual(model.model_code, "EDF-100081")
 
 
 if __name__ == "__main__":

@@ -35,13 +35,17 @@ from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceIn
 
 from .const import (
     DOMAIN,
+    KEY_ACOUSTIC_SPACE,
     KEY_AUDIO_MAC_ADDRESS,
     KEY_BEEP,
-    KEY_DEVICE_NAME,
     KEY_CONNECTION_STATUS,
+    KEY_DESKTOP_MODE,
+    KEY_DEVICE_NAME,
     KEY_EQ_MODE,
     KEY_LIGHT_DISTANCE,
     KEY_LIGHT_TIME,
+    KEY_LOW_CUT_FREQUENCY,
+    KEY_LOW_CUT_SLOPE,
     KEY_MEDIA_PLAYER,
     KEY_RSSI,
     KEY_SOURCE,
@@ -52,6 +56,7 @@ from .models import EdifierMediaState, EdifierModel, EdifierState
 from .protocol import (
     DISTANCE_TO_OPTION,
     EQ_BANDS,
+    EQ_BANDS_BY_KEY,
     EQ_MODE_TO_OPTION,
     LIGHT_TIME_TO_OPTION,
     SOURCE_TO_OPTION,
@@ -172,6 +177,17 @@ NUMBER_DESCRIPTIONS: tuple[EdifierNumberDescription, ...] = (
         )
         for band in EQ_BANDS
     ),
+    EdifierNumberDescription(
+        key=KEY_LOW_CUT_FREQUENCY,
+        translation_key=KEY_LOW_CUT_FREQUENCY,
+        icon="mdi:filter",
+        native_min_value=20,
+        native_max_value=20000,
+        native_step=1,
+        native_unit_of_measurement="Hz",
+        mode=NumberMode.BOX,
+        feature_keys=("AdvancedAudio",),
+    ),
 )
 
 SELECT_DESCRIPTIONS: tuple[EdifierSelectDescription, ...] = (
@@ -188,6 +204,20 @@ SELECT_DESCRIPTIONS: tuple[EdifierSelectDescription, ...] = (
         icon="mdi:equalizer",
         options=list(EQ_MODE_TO_OPTION.values()),
         feature_keys=("Equalizer",),
+    ),
+    EdifierSelectDescription(
+        key=KEY_LOW_CUT_SLOPE,
+        translation_key=KEY_LOW_CUT_SLOPE,
+        icon="mdi:filter",
+        options=["6dB", "12dB", "18dB", "24dB"],
+        feature_keys=("AdvancedAudio",),
+    ),
+    EdifierSelectDescription(
+        key=KEY_ACOUSTIC_SPACE,
+        translation_key=KEY_ACOUSTIC_SPACE,
+        icon="mdi:volume-minus",
+        options=["0", "2", "4", "6"],
+        feature_keys=("AdvancedAudio",),
     ),
     EdifierSelectDescription(
         key=KEY_LIGHT_TIME,
@@ -211,6 +241,12 @@ SWITCH_DESCRIPTIONS: tuple[EdifierSwitchDescription, ...] = (
         translation_key="beep",
         icon="mdi:bullhorn",
         feature_keys=("BeepSet",),
+    ),
+    EdifierSwitchDescription(
+        key=KEY_DESKTOP_MODE,
+        translation_key=KEY_DESKTOP_MODE,
+        icon="mdi:desktop-tower-monitor",
+        feature_keys=("AdvancedAudio",),
     ),
 )
 
@@ -260,6 +296,13 @@ def state_to_bluetooth_data(
         feature_keys: tuple[str, ...] = getattr(description, "feature_keys", ())
         if not all(state.features.supports(feature) for feature in feature_keys):
             continue
+        if description.key == KEY_EQ_MODE and model.model == "MR3":
+            continue
+        if (
+            description.key in EQ_BANDS_BY_KEY
+            and description.key not in state.eq_bands
+        ):
+            continue
 
         entity_key = PassiveBluetoothEntityKey(description.key, None)
         update.entity_descriptions[entity_key] = description
@@ -278,6 +321,16 @@ def _entity_value(state: EdifierState, key: str) -> Any:
         return state.source
     if key == KEY_EQ_MODE:
         return state.eq_mode
+    if key == KEY_LOW_CUT_FREQUENCY:
+        return state.low_cut_frequency
+    if key == KEY_LOW_CUT_SLOPE:
+        if state.low_cut_slope is None:
+            return None
+        return ("6dB", "12dB", "18dB", "24dB")[state.low_cut_slope]
+    if key == KEY_ACOUSTIC_SPACE:
+        return str(state.acoustic_space) if state.acoustic_space is not None else None
+    if key == KEY_DESKTOP_MODE:
+        return state.desktop_mode
     if key == KEY_LIGHT_TIME:
         return state.light_time
     if key == KEY_LIGHT_DISTANCE:
@@ -300,6 +353,7 @@ def _entity_value(state: EdifierState, key: str) -> Any:
         return EdifierMediaState(
             state=media_state,
             volume=state.volume,
+            max_volume=state.max_volume,
             muted=state.volume == 0,
             title=state.media_title,
             artist=state.media_artist,

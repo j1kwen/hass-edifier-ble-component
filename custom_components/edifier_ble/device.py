@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
 import logging
+from collections.abc import Callable
 
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
@@ -27,6 +27,7 @@ from .const import (
     CMD_QUERY_LIGHT,
     CMD_QUERY_SOURCE,
     CMD_QUERY_VOLUME,
+    CMD_SET_ADVANCED_AUDIO,
     CMD_SET_BEEP,
     CMD_SET_DEVICE_NAME,
     CMD_SET_EQ_BAND,
@@ -54,13 +55,17 @@ from .protocol import (
     SOURCE_TO_OPTION,
     EdifierFrame,
     PacketStreamParser,
+    build_advanced_audio_data,
     build_eq_band_data,
+    build_mr3_eq_band_data,
     build_packet,
+    parse_advanced_audio,
     parse_d8_features,
     parse_eq_bands,
     parse_firmware_version,
     parse_mac_address,
     parse_media_info,
+    parse_mr3_eq_bands,
     parse_utf8,
 )
 
@@ -112,7 +117,7 @@ class EdifierDevice:
     @property
     def last_nonzero_volume(self) -> int:
         """Return the last non-zero volume, defaulting to half volume."""
-        return self._last_nonzero_volume or 8
+        return self._last_nonzero_volume or max(1, self._state.max_volume // 2)
 
     @property
     def max_device_name_length(self) -> int:
@@ -152,12 +157,16 @@ class EdifierDevice:
                 """Handle a BLE disconnect callback."""
                 if self._client is not disconnected_client:
                     return
+                _LOGGER.debug("%s: BLE connection lost", self.address)
                 self._client = None
                 self._initialized = False
                 self._state.connected = False
                 self._fail_pending(BleakError("Bluetooth device disconnected"))
                 self._notify_state_changed()
 
+            _LOGGER.debug(
+                "%s: Connecting to Edifier %s", self.address, self.model.model
+            )
             client = await establish_connection(
                 BleakClientWithServiceCache,
                 device,
@@ -171,6 +180,12 @@ class EdifierDevice:
                     NOTIFY_CHARACTERISTIC_UUID, self._notification_handler
                 )
             except BleakError:
+                _LOGGER.debug(
+                    "%s: Failed to subscribe to notifications on %s",
+                    self.address,
+                    NOTIFY_CHARACTERISTIC_UUID,
+                    exc_info=True,
+                )
                 await client.disconnect()
                 raise
 
@@ -178,7 +193,11 @@ class EdifierDevice:
             self._stream_parser = PacketStreamParser()
             self._state.connected = True
             self._notify_state_changed()
-            _LOGGER.debug("%s: connected", self.address)
+            _LOGGER.debug(
+                "%s: connected; notifications on %s",
+                self.address,
+                NOTIFY_CHARACTERISTIC_UUID,
+            )
             return True
 
     async def async_disconnect(self) -> None:
@@ -193,12 +212,16 @@ class EdifierDevice:
             if client is not None:
                 try:
                     await client.stop_notify(NOTIFY_CHARACTERISTIC_UUID)
-                except (BleakError, EOFError, BrokenPipeError):
-                    pass
+                except (BleakError, EOFError, BrokenPipeError) as err:
+                    _LOGGER.debug(
+                        "%s: Failed to stop notifications: %s", self.address, err
+                    )
                 try:
                     await client.disconnect()
-                except (BleakError, EOFError, BrokenPipeError):
-                    pass
+                except (BleakError, EOFError, BrokenPipeError) as err:
+                    _LOGGER.debug(
+                        "%s: Failed to disconnect: %s", self.address, err
+                    )
 
             self._notify_state_changed()
             _LOGGER.debug("%s: disconnected", self.address)
@@ -216,6 +239,11 @@ class EdifierDevice:
         if not self.connected:
             raise BleakError("Device is not connected")
 
+        _LOGGER.debug(
+            "%s: Initializing Edifier %s: querying D8 features",
+            self.address,
+            self.model.model,
+        )
         await self._async_query(CMD_QUERY_FEATURES, timeout=QUERY_TIMEOUT_SECONDS)
         if not self._state.features.flags:
             raise BleakError("Device returned an empty D8 feature bitmap")
@@ -223,6 +251,7 @@ class EdifierDevice:
         await self.async_query_all()
         self._initialized = True
         self._notify_state_changed()
+        _LOGGER.debug("%s: Initialization complete", self.address)
 
     async def async_refresh(self, ble_device: BLEDevice | None = None) -> None:
         """Refresh the connection and all supported state."""
@@ -251,6 +280,12 @@ class EdifierDevice:
         if features.supports("BeepSet"):
             requests.append((CMD_QUERY_BEEP, b""))
 
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER.debug(
+                "%s: State queries selected by D8: %s",
+                self.address,
+                [f"0x{command:02X}" for command, _ in requests],
+            )
         if not requests:
             return
 
@@ -314,18 +349,39 @@ class EdifierDevice:
             self._pending.setdefault(command, []).append(future)
 
             try:
+                packet = build_packet(command, data)
+                if _LOGGER.isEnabledFor(logging.DEBUG):
+                    _LOGGER.debug(
+                        "%s: TX command=0x%02X characteristic=%s packet=%s",
+                        self.address,
+                        command,
+                        WRITE_CHARACTERISTIC_UUID,
+                        packet.hex(" "),
+                    )
                 await client.write_gatt_char(
                     WRITE_CHARACTERISTIC_UUID,
-                    build_packet(command, data),
+                    packet,
                     response=False,
                 )
             except Exception:
                 self._remove_pending(command, future)
+                _LOGGER.debug(
+                    "%s: Failed to write command 0x%02X",
+                    self.address,
+                    command,
+                    exc_info=True,
+                )
                 raise
 
         try:
             return await asyncio.wait_for(future, timeout)
         except TimeoutError:
+            _LOGGER.debug(
+                "%s: Response timeout: command=0x%02X, timeout=%.2fs",
+                self.address,
+                command,
+                timeout,
+            )
             raise
         finally:
             self._remove_pending(command, future)
@@ -354,16 +410,32 @@ class EdifierDevice:
         self, _: object, data: bytearray
     ) -> None:
         """Handle an incoming BLE notification."""
-        frames = self._stream_parser.feed(bytes(data))
+        raw = bytes(data)
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER.debug(
+                "%s: RX notification (%d bytes): %s",
+                self.address,
+                len(raw),
+                raw.hex(" "),
+            )
+        frames = self._stream_parser.feed(raw)
         if not frames:
             _LOGGER.debug(
-                "%s: Ignored malformed notification: %s",
+                "%s: No complete valid frame in notification "
+                "(incomplete or malformed data)",
                 self.address,
-                bytes(data).hex(" "),
             )
             return
 
         for frame in frames:
+            if _LOGGER.isEnabledFor(logging.DEBUG):
+                _LOGGER.debug(
+                    "%s: RX frame header=0x%02X command=0x%02X data=%s",
+                    self.address,
+                    frame.header,
+                    frame.command,
+                    frame.data.hex(" "),
+                )
             self._update_state(frame)
             self._resolve_pending(frame.command, frame.data)
 
@@ -404,7 +476,8 @@ class EdifierDevice:
                     else "bluetooth"
                 )
         elif command in (CMD_QUERY_VOLUME, CMD_SET_VOLUME):
-            if len(data) >= 2 and data[0] == 0x10:
+            if len(data) >= 2 and 0 < data[0] <= 0xFF:
+                state.max_volume = data[0]
                 self._set_volume_from_device(data[1])
         elif command in (CMD_QUERY_LIGHT, CMD_SET_LIGHT):
             if len(data) >= 3 and data[0] == 0x03:
@@ -416,12 +489,27 @@ class EdifierDevice:
         elif command == CMD_SET_BEEP:
             if data:
                 state.beep = data[-1] == 0x01
-        elif command == CMD_QUERY_EQ_MODE and len(data) == 1:
-            state.eq_mode = EQ_MODE_TO_OPTION.get(data[0])
+        elif command == CMD_QUERY_EQ_MODE:
+            if self.model.model == "MR3":
+                if advanced := parse_advanced_audio(data):
+                    (
+                        state.low_cut_frequency,
+                        state.low_cut_slope,
+                        state.acoustic_space,
+                        state.desktop_mode,
+                    ) = advanced
+                    state.features.flags["AdvancedAudio"] = True
+            elif len(data) == 1:
+                state.eq_mode = EQ_MODE_TO_OPTION.get(data[0])
         elif command == CMD_SET_EQ_MODE and len(data) == 1:
             state.eq_mode = EQ_MODE_TO_OPTION.get(data[0], state.eq_mode)
         elif command == CMD_QUERY_EQ_BANDS:
-            if gains := parse_eq_bands(data):
+            if self.model.model == "MR3":
+                gains, indices = parse_mr3_eq_bands(data)
+                if gains:
+                    state.eq_bands = gains
+                    state.eq_band_indices = indices
+            elif gains := parse_eq_bands(data):
                 state.eq_bands.update(gains)
         elif command == CMD_MEDIA_INFO:
             playing, title, artist = parse_media_info(data)
@@ -436,10 +524,21 @@ class EdifierDevice:
         elif command == CMD_QUERY_FEATURES:
             state.features = parse_d8_features(data)
             self._sync_features_to_state()
+            if _LOGGER.isEnabledFor(logging.DEBUG):
+                _LOGGER.debug(
+                    "%s: D8 supported features: %s; max device name length: %d bytes",
+                    self.address,
+                    sorted(
+                        feature
+                        for feature, supported in state.features.flags.items()
+                        if supported
+                    ),
+                    state.features.max_device_name_length,
+                )
 
     def _set_volume_from_device(self, volume: int) -> None:
         """Update volume and remember the last non-zero value."""
-        if not 0 <= volume <= 16:
+        if not 0 <= volume <= self._state.max_volume:
             return
         self._state.volume = volume
         if volume > 0:
@@ -463,6 +562,7 @@ class EdifierDevice:
         if not features.supports("Equalizer"):
             state.eq_mode = None
             state.eq_bands.clear()
+            state.eq_band_indices.clear()
         if not features.supports("SmartLight"):
             state.light_time = None
             state.light_distance = None
@@ -483,9 +583,11 @@ class EdifierDevice:
         self._notify_state_changed()
 
     async def async_set_volume(self, volume: int) -> None:
-        """Set volume from 0 to 16, where 0 is mute."""
-        if not 0 <= volume <= 16:
-            raise ValueError("Volume must be between 0 and 16")
+        """Set volume within the range reported by the device."""
+        if not 0 <= volume <= self._state.max_volume:
+            raise ValueError(
+                f"Volume must be between 0 and {self._state.max_volume}"
+            )
         await self._async_send_command(CMD_SET_VOLUME, bytes((volume,)))
         self._set_volume_from_device(volume)
         self._notify_state_changed()
@@ -499,6 +601,8 @@ class EdifierDevice:
 
     async def async_set_eq_mode(self, option: str) -> None:
         """Set the equalizer preset."""
+        if self.model.model == "MR3":
+            raise ValueError("Equalizer presets are not supported for this model")
         mode = OPTION_TO_EQ_MODE.get(option)
         if mode is None:
             raise ValueError(f"Unsupported equalizer mode: {option}")
@@ -511,12 +615,68 @@ class EdifierDevice:
         band = EQ_BANDS_BY_KEY.get(key)
         if band is None:
             raise ValueError(f"Unsupported equalizer band: {key}")
-        if self._state.eq_mode != "diy":
+        if self.model.model != "MR3" and self._state.eq_mode != "diy":
             raise ValueError("Equalizer bands can only be changed in DIY mode")
         if not -3.0 <= gain_db <= 3.0:
             raise ValueError("Equalizer gain must be between -3.0 and 3.0 dB")
-        await self._async_send_command(CMD_SET_EQ_BAND, build_eq_band_data(band, gain_db))
+        if self.model.model == "MR3":
+            index = self._state.eq_band_indices.get(key)
+            if index is None:
+                raise ValueError(f"Equalizer band is not available: {key}")
+            payload = build_mr3_eq_band_data(index, band, gain_db)
+        else:
+            payload = build_eq_band_data(band, gain_db)
+        await self._async_send_command(CMD_SET_EQ_BAND, payload)
         self._state.eq_bands[key] = round(gain_db * 2) / 2
+        self._notify_state_changed()
+
+    async def async_set_low_cut_frequency(self, frequency: int) -> None:
+        """Set the MR3 low-cut frequency."""
+        if not 20 <= frequency <= 20000:
+            raise ValueError("Low-cut frequency must be between 20 and 20000 Hz")
+        await self._async_set_advanced_audio(low_cut_frequency=frequency)
+
+    async def async_set_low_cut_slope(self, option: str) -> None:
+        """Set the MR3 low-cut slope."""
+        slopes = {"6dB": 0, "12dB": 1, "18dB": 2, "24dB": 3}
+        if option not in slopes:
+            raise ValueError(f"Unsupported low-cut slope: {option}")
+        await self._async_set_advanced_audio(low_cut_slope=slopes[option])
+
+    async def async_set_acoustic_space(self, option: str) -> None:
+        """Set the MR3 acoustic-space attenuation."""
+        if option not in ("0", "2", "4", "6"):
+            raise ValueError(f"Unsupported acoustic-space value: {option}")
+        await self._async_set_advanced_audio(acoustic_space=int(option))
+
+    async def async_set_desktop_mode(self, enabled: bool) -> None:
+        """Set the MR3 desktop mode."""
+        await self._async_set_advanced_audio(desktop_mode=enabled)
+
+    async def _async_set_advanced_audio(self, **changes: int | bool) -> None:
+        """Write all MR3 advanced audio settings, preserving unchanged values."""
+        state = self._state
+        if not state.features.supports("AdvancedAudio"):
+            raise ValueError("Advanced audio settings are not available")
+        frequency = changes.get(
+            "low_cut_frequency", state.low_cut_frequency
+        )
+        slope = changes.get("low_cut_slope", state.low_cut_slope)
+        acoustic = changes.get("acoustic_space", state.acoustic_space)
+        desktop = changes.get("desktop_mode", state.desktop_mode)
+        if None in (frequency, slope, acoustic, desktop):
+            raise ValueError("Advanced audio settings have not been initialized")
+
+        await self._async_send_command(
+            CMD_SET_ADVANCED_AUDIO,
+            build_advanced_audio_data(
+                int(frequency), int(slope), int(acoustic), bool(desktop)
+            ),
+        )
+        state.low_cut_frequency = int(frequency)
+        state.low_cut_slope = int(slope)
+        state.acoustic_space = int(acoustic)
+        state.desktop_mode = bool(desktop)
         self._notify_state_changed()
 
     async def async_set_light(
@@ -596,6 +756,7 @@ class EdifierDevice:
         return EdifierMediaState(
             state=media_state,
             volume=state.volume,
+            max_volume=state.max_volume,
             muted=state.volume == 0,
             title=state.media_title,
             artist=state.media_artist,

@@ -6,7 +6,7 @@
 
 仓库地址：https://github.com/j1kwen/hass-edifier-ble-component
 
-通过 Bluetooth LE 控制 Edifier 音箱的 Home Assistant 自定义集成。目前支持 Edifier N300，可使用本机 Bluetooth 适配器或 ESPHome Bluetooth Proxy。
+通过 Bluetooth LE 控制 Edifier 音箱的 Home Assistant 自定义集成。目前支持 Edifier N300 和 MR3，可使用本机 Bluetooth 适配器或 ESPHome Bluetooth Proxy。
 
 ## 功能
 
@@ -22,8 +22,9 @@
 | 型号 | 型号代码 | 广播 Service UUID |
 |---|---|---|
 | Edifier N300 | EDF100074 | `00007e00-0000-1000-8000-00805f9b34fb` |
+| Edifier MR3 | EDF-100081 | `0000f300-0000-1000-8000-00805f9b34fb` |
 
-新增型号需要在 [const.py](custom_components/edifier_ble/const.py) 中添加型号映射，并按需补充协议处理。
+实体支持主要由设备上报的 `D8` 功能位图驱动。MR3 的音量、可变频段均衡器和高级音频响应格式与 N300 不同，因此采用独立的型号处理逻辑。
 
 ## 环境要求
 
@@ -70,10 +71,11 @@
 | BLE 连接状态 | Binary sensor | 当前 BLE 连接状态 |
 | 蓝牙音频 MAC 地址 | Sensor | 来自 `C8` 的经典蓝牙音频 MAC |
 | 音源 | Select | 蓝牙、声卡或 AUX |
-| 音量 | Number | 0 到 16，0 为静音 |
+| 音量 | Number | 设备上报的范围（N300 为 0 到 16；已观测 MR3 为 0 到 30），0 为静音 |
 | 媒体播放器 | Media player | 播放、暂停、上一曲、下一曲、音量和静音 |
-| 均衡器模式 | Select | 音乐、监听、游戏、电影和 DIY |
-| 均衡器 6 段 | Number | 62 Hz、250 Hz、1 kHz、4 kHz、8 kHz、16 kHz，范围 -3 到 +3 dB，步长 0.5；仅在 DIY 模式下可调 |
+| 均衡器模式 | Select | N300：音乐、监听、游戏、电影和 DIY |
+| 均衡器频段 | Number | 根据设备响应动态创建；N300 为六段，已观测 MR3 为九段；范围 -3 到 +3 dB，步长 0.5 |
+| 低切频率、斜率、声学空间、桌面模式 | Number、Select、Switch | MR3 高级音频控制 |
 | 亮灯时长 | Select | 5 秒、10 秒、20 秒或常亮 |
 | 感应距离 | Select | 远、普通或近 |
 | 蓝牙提示音 | Switch | 打开或关闭提示音 |
@@ -81,7 +83,7 @@
 ## 注意事项
 
 - 不支持也不会发送关机命令 `CE` 和未知风险命令 `CF`。
-- Edifier N300 的 BLE 控制通道同一时间只允许一个中心设备连接。
+- Edifier BLE 控制通道同一时间只允许一个中心设备连接。
 - 歌曲信息依赖经典蓝牙 AVRCP，只在蓝牙音源模式下由设备主动上报。
 - 固件升级后重新连接设备会重新查询 `D8`，自动适配新增或移除的功能。
 
@@ -112,6 +114,14 @@ logger:
   logs:
     custom_components.edifier_ble: debug
 ```
+
+更新集成后，请重启 Home Assistant。关闭再打开 BLE 连接开关，即可记录初始化过程及新的 `D8` 响应。
+
+调试日志包含发送的数据包（`TX`）、原始 BLE 通知（`RX notification`）、组装后的响应帧
+（`RX frame`，包括未知命令）、解码后的 `D8` 功能、选定的状态查询，以及命令超时和传输错误。
+数据包和载荷以十六进制显示。未完整接收的通知不一定是错误：一个响应可能分成多个 BLE 通知。
+
+分享日志前，请隐藏蓝牙地址、设备名称和媒体信息。原始十六进制载荷也可能包含这些信息。
 
 ## 开发和测试
 

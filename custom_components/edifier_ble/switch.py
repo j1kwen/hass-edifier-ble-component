@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, KEY_BEEP, KEY_CONNECTION
+from .const import DOMAIN, KEY_CONNECTION, KEY_DESKTOP_MODE
 from .coordinator import EdifierBluetoothDataProcessor, EdifierCoordinator
 from .entity import (
     SWITCH_DESCRIPTIONS,
@@ -38,7 +38,7 @@ async def async_setup_entry(
         )
     )
     entry.async_on_unload(
-        processor.async_add_entities_listener(EdifierBeepSwitch, async_add_entities)
+        processor.async_add_entities_listener(EdifierSwitch, async_add_entities)
     )
     entry.async_on_unload(coordinator.async_register_processor(processor))
 
@@ -83,8 +83,8 @@ class EdifierConnectionSwitch(SwitchEntity):
         self.async_write_ha_state()
 
 
-class EdifierBeepSwitch(EdifierControlEntity, SwitchEntity):
-    """The Bluetooth prompt-tone switch."""
+class EdifierSwitch(EdifierControlEntity, SwitchEntity):
+    """An Edifier boolean control."""
 
     @property
     def is_on(self) -> bool | None:
@@ -92,9 +92,15 @@ class EdifierBeepSwitch(EdifierControlEntity, SwitchEntity):
         return self.processor.entity_data.get(self.entity_key)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Enable prompt tones."""
-        await self.coordinator.device.async_set_beep(True)
+        """Enable the selected switch."""
+        if self.entity_description.key == KEY_DESKTOP_MODE:
+            await self.coordinator.device.async_set_desktop_mode(True)
+        else:
+            await self.coordinator.device.async_set_beep(True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Disable prompt tones."""
-        await self.coordinator.device.async_set_beep(False)
+        """Disable the selected switch."""
+        if self.entity_description.key == KEY_DESKTOP_MODE:
+            await self.coordinator.device.async_set_desktop_mode(False)
+        else:
+            await self.coordinator.device.async_set_beep(False)

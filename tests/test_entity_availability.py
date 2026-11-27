@@ -17,12 +17,14 @@ from custom_components.edifier_ble.entity import (
     BINARY_SENSOR_DESCRIPTIONS,
     MEDIA_PLAYER_DESCRIPTIONS,
     NUMBER_DESCRIPTIONS,
+    SELECT_DESCRIPTIONS,
     SENSOR_DESCRIPTIONS,
+    SWITCH_DESCRIPTIONS,
     build_device_info,
     state_to_bluetooth_data,
 )
-from custom_components.edifier_ble.models import EdifierState
 from custom_components.edifier_ble.media_player import EdifierMediaPlayer
+from custom_components.edifier_ble.models import EdifierState
 from custom_components.edifier_ble.number import EdifierNumber
 from custom_components.edifier_ble.protocol import parse_d8_features
 from custom_components.edifier_ble.sensor import EdifierSensor
@@ -103,6 +105,17 @@ class EntityAvailabilityTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(number.available)
 
+    def test_volume_maximum_uses_device_report(self) -> None:
+        """The volume number advertises the range reported by the device."""
+        self.device.state.max_volume = 30
+        description = NUMBER_DESCRIPTIONS[0]
+        number = EdifierNumber(
+            self.processor,
+            PassiveBluetoothEntityKey(description.key, None),
+            description,
+        )
+        self.assertEqual(number.native_max_value, 30)
+
     def test_ble_address_is_used_for_connections(self) -> None:
         """Device connections should use the BLE advertisement address."""
         self.device.state.mac_address = "C8:24:78:C0:AF:2C"
@@ -161,6 +174,42 @@ class EntityAvailabilityTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(next(iter(sensor_data.entity_data.values())), -54)
         self.assertIs(next(iter(binary_data.entity_data.values())), True)
+
+    def test_mr3_entities_follow_reported_bands_and_advanced_audio(self) -> None:
+        """MR3 exposes only parsed EQ bands and valid advanced controls."""
+        state = EdifierState()
+        state.features.flags.update({"Equalizer": True, "AdvancedAudio": True})
+        state.eq_bands = {"eq_125hz": 0.5, "eq_16khz": -1.0}
+        state.eq_band_indices = {"eq_125hz": 1, "eq_16khz": 8}
+        state.low_cut_frequency = 35
+        state.low_cut_slope = 3
+        state.acoustic_space = 0
+        state.desktop_mode = False
+        model = MODELS_BY_SERVICE_UUID["0000f300-0000-1000-8000-00805f9b34fb"]
+
+        number_data = state_to_bluetooth_data(
+            state, model, "AA:BB:CC:DD:EE:FF", NUMBER_DESCRIPTIONS
+        )
+        select_data = state_to_bluetooth_data(
+            state, model, "AA:BB:CC:DD:EE:FF", SELECT_DESCRIPTIONS
+        )
+        switch_data = state_to_bluetooth_data(
+            state, model, "AA:BB:CC:DD:EE:FF", SWITCH_DESCRIPTIONS
+        )
+
+        number_keys = {key.key for key in number_data.entity_descriptions}
+        self.assertIn("eq_125hz", number_keys)
+        self.assertIn("eq_16khz", number_keys)
+        self.assertNotIn("eq_62hz", number_keys)
+        self.assertIn("low_cut_frequency", number_keys)
+        select_keys = {key.key for key in select_data.entity_descriptions}
+        self.assertNotIn("eq_mode", select_keys)
+        self.assertIn("low_cut_slope", select_keys)
+        self.assertIn("acoustic_space", select_keys)
+        self.assertIn(
+            "desktop_mode",
+            {key.key for key in switch_data.entity_descriptions},
+        )
 
 
 if __name__ == "__main__":

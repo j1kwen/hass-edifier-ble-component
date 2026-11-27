@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, KEY_VOLUME
+from .const import DOMAIN, KEY_LOW_CUT_FREQUENCY, KEY_VOLUME
 from .coordinator import EdifierBluetoothDataProcessor, EdifierCoordinator
 from .entity import (
     NUMBER_DESCRIPTIONS,
@@ -46,7 +46,10 @@ class EdifierNumber(EdifierControlEntity, NumberEntity):
         """Return whether this number can currently be controlled."""
         if not super().available:
             return False
-        if getattr(self.entity_description, "eq_diy_only", False):
+        if (
+            getattr(self.entity_description, "eq_diy_only", False)
+            and self.coordinator.device.model.model != "MR3"
+        ):
             return self.coordinator.device.state.eq_mode == "diy"
         return True
 
@@ -55,11 +58,22 @@ class EdifierNumber(EdifierControlEntity, NumberEntity):
         """Return the number value."""
         return self.processor.entity_data.get(self.entity_key)
 
+    @property
+    def native_max_value(self) -> float:
+        """Return the device-reported maximum volume or the configured maximum."""
+        if self.entity_description.key == KEY_VOLUME:
+            return float(self.coordinator.device.state.max_volume)
+        return float(self.entity_description.native_max_value)
+
     async def async_set_native_value(self, value: float) -> None:
         """Set the number value."""
         try:
             if self.entity_description.key == KEY_VOLUME:
                 await self.coordinator.device.async_set_volume(round(value))
+            elif self.entity_description.key == KEY_LOW_CUT_FREQUENCY:
+                await self.coordinator.device.async_set_low_cut_frequency(
+                    round(value)
+                )
             else:
                 await self.coordinator.device.async_set_eq_band(
                     self.entity_description.key, value

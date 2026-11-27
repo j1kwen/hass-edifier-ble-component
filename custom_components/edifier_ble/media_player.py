@@ -55,8 +55,6 @@ class EdifierMediaPlayer(EdifierControlEntity, MediaPlayerEntity):
     """Control Edifier playback, volume, and media metadata."""
 
     _attr_supported_features = SUPPORTED_FEATURES
-    _attr_volume_step = 1 / 16
-
     @property
     def _media(self) -> EdifierMediaState | None:
         """Return the current media state."""
@@ -77,7 +75,7 @@ class EdifierMediaPlayer(EdifierControlEntity, MediaPlayerEntity):
         """Return volume as a 0..1 value."""
         if (media := self._media) is None or media.volume is None:
             return None
-        return media.volume / 16
+        return media.volume / media.max_volume if media.max_volume else 0
 
     @property
     def is_volume_muted(self) -> bool | None:
@@ -134,7 +132,8 @@ class EdifierMediaPlayer(EdifierControlEntity, MediaPlayerEntity):
 
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume from 0..1."""
-        await self.coordinator.device.async_set_volume(round(volume * 16))
+        max_volume = self.coordinator.device.state.max_volume
+        await self.coordinator.device.async_set_volume(round(volume * max_volume))
 
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute or restore volume."""

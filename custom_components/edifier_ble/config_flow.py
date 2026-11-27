@@ -33,7 +33,9 @@ def _model_from_discovery(
 
     if EDIFIER_COMPANY_ID in discovery_info.manufacturer_data:
         # Manufacturer matching is intentionally limited to the case where the
-        # mapping is unambiguous. Future models should advertise their UUID.
+        # mapping is unambiguous, since every known model shares the same
+        # manufacturer ID. Each model is expected to advertise its own
+        # service UUID so the loop above can disambiguate it.
         models = list(MODELS_BY_SERVICE_UUID.values())
         if len(models) == 1:
             return models[0]
